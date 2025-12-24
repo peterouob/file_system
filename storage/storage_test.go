@@ -62,3 +62,33 @@ func TestDiskStorage(t *testing.T) {
 		t.Errorf("read wrong: got %s, want %s", string(b), string(data))
 	}
 }
+
+func BenchmarkDiskStore_Write_Reader(b *testing.B) {
+	s, treadDown := setupDiskTest(&testing.T{})
+	defer treadDown()
+
+	key := "batch_key"
+	data := make([]byte, 1024*1024)
+
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		_, err := s.Write(key, bytes.NewReader(data))
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		_, r, err := s.Read(key)
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		_, err = io.ReadAll(r)
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		_ = r.Close()
+	}
+}
