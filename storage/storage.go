@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/peterouob/file_system/crypto"
 )
 
 type DiskStore struct {
@@ -53,21 +55,31 @@ func (s *DiskStore) Has(key string) bool {
 	return !errors.Is(err, os.ErrNotExist)
 }
 
+func (s *DiskStore) openWriteFile(key string) (*os.File, error) {
+	path := s.PathTransformFunc(key)
+	pathWithRoot := fmt.Sprintf("%s/%s", s.Root, path.FilePath)
+
+	if err := os.MkdirAll(pathWithRoot, os.ModePerm); err != nil {
+		return nil, err
+	}
+
+	fullPathWithRoot := fmt.Sprintf("%s/%s", s.Root, path.GetFullPath())
+	return os.Create(fullPathWithRoot)
+}
+
+func (s *DiskStore) openReadFile(key string) (*os.File, error) {
+	path := s.PathTransformFunc(key)
+	fullPathWithRoot := fmt.Sprintf("%s/%s", s.Root, path.GetFullPath())
+
+	return os.Open(fullPathWithRoot)
+}
+
 func (s *DiskStore) Write(key string, r io.Reader) (int64, error) {
 	return s.writeStream(key, r)
 }
 
 func (s *DiskStore) writeStream(key string, r io.Reader) (int64, error) {
-
-	path := s.PathTransformFunc(key)
-	pathWithRoot := fmt.Sprintf("%s/%s", s.Root, path.FilePath)
-
-	if err := os.MkdirAll(pathWithRoot, os.ModePerm); err != nil {
-		return 0, err
-	}
-
-	fullPathWithRoot := fmt.Sprintf("%s/%s", s.Root, path.GetFullPath())
-	f, err := os.Create(fullPathWithRoot)
+	f, err := s.openWriteFile(key)
 	if err != nil {
 		return 0, err
 	}
@@ -79,15 +91,27 @@ func (s *DiskStore) writeStream(key string, r io.Reader) (int64, error) {
 	return io.Copy(f, r)
 }
 
+func (s *DiskStore) WriteEncrypt(encKey []byte, key string, r io.Reader) (int64, error) {
+	f, err := s.openWriteFile(key)
+	if err != nil {
+		return 0, err
+	}
+
+	defer f.Close()
+
+	n, err := crypto.CopyEnCrypto(encKey, r, f)
+	if err != nil {
+		return 0, err
+	}
+	return int64(n), nil
+}
+
 func (s *DiskStore) Read(key string) (int64, io.ReadCloser, error) {
 	return s.readStream(key)
 }
 
 func (s *DiskStore) readStream(key string) (int64, io.ReadCloser, error) {
-	path := s.PathTransformFunc(key)
-	fullPathWithRoot := fmt.Sprintf("%s/%s", s.Root, path.GetFullPath())
-
-	f, err := os.Open(fullPathWithRoot)
+	f, err := s.openReadFile(key)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -98,4 +122,19 @@ func (s *DiskStore) readStream(key string) (int64, io.ReadCloser, error) {
 	}
 
 	return fi.Size(), f, nil
+}
+
+func (s *DiskStore) ReadDecrypt(encKey []byte, key string, d io.Writer) (int64, error) {
+	f, err := s.openReadFile(key)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	n, err := crypto.CopyDeCrypto(encKey, f, d)
+	if err != nil {
+		return 0, err
+	}
+
+	return int64(n), nil
 }

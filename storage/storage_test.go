@@ -5,6 +5,8 @@ import (
 	"io"
 	"os"
 	"testing"
+
+	"github.com/peterouob/file_system/utils"
 )
 
 func setupDiskTest(t *testing.T) (*DiskStore, func()) {
@@ -63,6 +65,40 @@ func TestDiskStorage(t *testing.T) {
 	}
 }
 
+func TestDiskWithCrypto(t *testing.T) {
+	s, teardown := setupDiskTest(t)
+	defer teardown()
+
+	key := "peter_picture"
+	data := "peter_picture_data"
+	src := bytes.NewReader([]byte(data))
+	encKey := utils.NewEncryptionKey()
+
+	if _, err := s.WriteEncrypt(encKey, key, src); err != nil {
+		t.Fatal(err)
+	}
+
+	rn, r, err := s.Read(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	if rn == int64(len(data)) {
+		t.Errorf("expect Read %d, but got %d", len(data), rn+1)
+	}
+
+	dst := new(bytes.Buffer)
+
+	if _, err := s.ReadDecrypt(encKey, key, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(dst.Bytes(), []byte(data)) {
+		t.Errorf("read wrong: got %s, want %s", dst.String(), data)
+	}
+}
+
 func BenchmarkDiskStore_Write_Reader(b *testing.B) {
 	s, treadDown := setupDiskTest(&testing.T{})
 	defer treadDown()
@@ -84,11 +120,7 @@ func BenchmarkDiskStore_Write_Reader(b *testing.B) {
 			b.Fatal(err)
 		}
 
-		_, err = io.ReadAll(r)
-		if err != nil {
-			b.Fatal(err)
-		}
+		defer r.Close()
 
-		_ = r.Close()
 	}
 }
