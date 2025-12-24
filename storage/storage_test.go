@@ -1,0 +1,64 @@
+package storage
+
+import (
+	"bytes"
+	"io"
+	"os"
+	"testing"
+)
+
+func setupDiskTest(t *testing.T) (*DiskStore, func()) {
+	dir, err := os.MkdirTemp("", "storage_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	disk := NewDiskStore(WithRoot(dir), WithPathTransformFunc(FileTransform))
+
+	teardown := func() {
+		_ = os.RemoveAll(dir)
+	}
+
+	return disk, teardown
+}
+
+func TestDiskStorage(t *testing.T) {
+	disk, teardown := setupDiskTest(t)
+	defer teardown()
+
+	key := "peter_picture"
+	data := []byte("peter_picture_data")
+
+	if disk.Has(key) {
+		t.Fatalf("expect Has key %s, but got true", key)
+	}
+
+	write, err := disk.Write(key, bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !disk.Has(key) {
+		t.Fatalf("expect Has key %s, but got false", key)
+	}
+
+	if write != int64(len(data)) {
+		t.Errorf("write wrong: got %d, want %d", write, len(data))
+	}
+
+	_, r, err := disk.Read(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer r.Close()
+
+	b, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(b) != string(data) {
+		t.Errorf("read wrong: got %s, want %s", string(b), string(data))
+	}
+}
