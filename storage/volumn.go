@@ -1,18 +1,19 @@
 package storage
 
 import (
-	"errors"
+	"fmt"
 	"os"
 	"sync"
 )
 
-var (
-	ErrWrite = errors.New("write error")
-)
+type KeyPair struct {
+	Key    uint64
+	AltKey uint32
+}
 
 type Volume struct {
 	dataFile    *os.File
-	index       map[uint64]NeedleMeta // from the crypto file name to get
+	index       map[KeyPair][]NeedleMeta // from the crypto file name to get
 	mu          sync.RWMutex
 	writeOffset int64
 }
@@ -25,7 +26,7 @@ type NeedleMeta struct {
 func NewVolume(dataFile *os.File) *Volume {
 	return &Volume{
 		dataFile:    dataFile,
-		index:       make(map[uint64]NeedleMeta),
+		index:       make(map[KeyPair][]NeedleMeta),
 		writeOffset: 0,
 	}
 }
@@ -38,14 +39,19 @@ func (v *Volume) Write(n *Needle) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
-	if _, err := v.dataFile.WriteAt(dataBytes, v.writeOffset); err != nil {
-		return ErrWrite
+	if n, err := v.dataFile.WriteAt(dataBytes, v.writeOffset); err != nil || n != len(dataBytes) {
+		return fmt.Errorf("write error: %v", err)
 	}
 
-	v.index[n.Header.Key] = NeedleMeta{
-		Offset: v.writeOffset,
-		Size:   uint32(len(n.Data)),
+	key := KeyPair{
+		Key:    n.Header.Key,
+		AltKey: n.Header.AlternateKey,
 	}
+
+	v.index[key] = append(v.index[key], NeedleMeta{
+		Offset: v.writeOffset,
+		Size:   n.Header.Size,
+	})
 
 	v.writeOffset += writeOffset
 	return nil

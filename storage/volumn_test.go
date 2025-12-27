@@ -5,22 +5,31 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 var benchPayload = make([]byte, 4096)
 
-func BenchmarkHaystack_Write(b *testing.B) {
-	tmpDir := b.TempDir()
+func setup(tb testing.TB) *os.File {
+	tb.Helper()
+	tmpDir := tb.TempDir()
 	vPath := filepath.Join(tmpDir, "bench.vol")
 
 	f, err := os.Create(vPath)
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer func() {
-		_ = f.Close()
-	}()
+	assert.NoError(tb, err)
 
+	return f
+}
+
+func teardown(f *os.File, tb testing.TB) {
+	assert.NoError(tb, f.Close())
+	assert.NoError(tb, os.Remove(f.Name()))
+}
+
+func BenchmarkHaystack_Write(b *testing.B) {
+	f := setup(b)
+	defer teardown(f, b)
 	volume := NewVolume(f)
 	b.ResetTimer()
 
@@ -32,14 +41,9 @@ func BenchmarkHaystack_Write(b *testing.B) {
 			},
 			Data: benchPayload,
 		}
-		if err := volume.Write(n); err != nil {
-			b.Fatal(err)
-		}
+		assert.NoError(b, volume.Write(n))
 	}
-
-	if err := volume.dataFile.Sync(); err != nil {
-		b.Fatal(err)
-	}
+	assert.NoError(b, volume.dataFile.Sync())
 }
 
 func BenchmarkOS_LooseFiles(b *testing.B) {
@@ -50,7 +54,51 @@ func BenchmarkOS_LooseFiles(b *testing.B) {
 		fileName := filepath.Join(tmpDir, fmt.Sprintf("%d.dat", i))
 
 		if err := os.WriteFile(fileName, benchPayload, 0644); err != nil {
-			b.Fatal(err)
+			assert.NoError(b, err)
 		}
 	}
+}
+func TestWrite(t *testing.T) {
+	f := setup(t)
+	defer teardown(f, t)
+
+	volume := NewVolume(f)
+	needle := &Needle{
+		Header: NeedleHeader{
+			Key:          1,
+			AlternateKey: 100,
+			Cookie:       12345,
+			MagicHeader:  MagicHeader,
+			Size:         4096,
+		},
+		Data: make([]byte, 4096),
+		Footer: NeedleFooter{
+			MagicFooter: MagicFooter,
+		},
+	}
+
+	assert.NoError(t, volume.Write(needle))
+
+	key := KeyPair{Key: 1, AltKey: 100}
+	metas := volume.index[key]
+
+	assert.Equal(t, 1, len(metas), "Should have 1 needle meta")
+	assert.Equal(t, int64(0), metas[0].Offset, "First offset should be 0")
+	assert.Equal(t, uint32(4096), metas[0].Size, "Size should be data size only")
+
+	// header + data + footer + padding
+	// (29+ 4096 + 8 + n) % 8 = 0;total = 4136
+	expectedTotalSize := int64(4136)
+	assert.Equal(t, expectedTotalSize, volume.writeOffset, "Write offset calculation incorrect")
+
+	if err := volume.Write(needle); err != nil {
+		t.Fatal(err)
+	}
+
+	metas = volume.index[key]
+
+	assert.Equal(t, 2, len(metas), "Should have 2 needle metas")
+	assert.Equal(t, expectedTotalSize, metas[1].Offset, "Second offset should start after first needle")
+
+	assert.Equal(t, expectedTotalSize*2, volume.writeOffset, "Final write offset incorrect")
 }
