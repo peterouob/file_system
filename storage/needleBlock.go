@@ -4,12 +4,6 @@ import (
 	"encoding/binary"
 )
 
-type Neddler interface {
-	Bytes() []byte
-}
-
-var _ Neddler = (*Needle)(nil)
-
 const MagicHeader = 0x2DCF25 >> 1
 const MagicFooter = 0x2DCF25 << 1
 

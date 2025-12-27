@@ -115,11 +115,7 @@ func setupTestVolume(t *testing.T) (*Volume, *os.File) {
 		_ = f.Close()
 	})
 
-	v := &Volume{
-		dataFile:    f,
-		index:       make(map[KeyPair][]NeedleMeta),
-		writeOffset: 0,
-	}
+	v := NewVolume(f)
 	return v, f
 }
 

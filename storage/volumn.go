@@ -18,6 +18,7 @@ type Volume struct {
 	index       map[KeyPair][]NeedleMeta // from the crypto file name to get
 	mu          sync.RWMutex
 	writeOffset int64
+	bufPool     sync.Pool
 }
 
 type NeedleMeta struct {
@@ -25,11 +26,18 @@ type NeedleMeta struct {
 	Size   uint32
 }
 
+const BlockSize = 32 * 1024
+
 func NewVolume(dataFile *os.File) *Volume {
 	return &Volume{
 		dataFile:    dataFile,
 		index:       make(map[KeyPair][]NeedleMeta),
 		writeOffset: 0,
+		bufPool: sync.Pool{
+			New: func() any {
+				return make([]byte, 0, BlockSize)
+			},
+		},
 	}
 }
 
@@ -79,7 +87,14 @@ func (v *Volume) Read(key KeyPair, cookie uint64) ([]byte, error) {
 	var lastMetaSize = meta[len(meta)-1].Size
 
 	totalSize := NeedleHeaderSize + lastMetaSize + NeedleFooterSize
-	buf := make([]byte, totalSize)
+
+	var buf = make([]byte, totalSize)
+
+	if totalSize <= BlockSize {
+		buf = v.bufPool.Get().([]byte)
+		buf = buf[:totalSize]
+		defer v.bufPool.Put(buf)
+	}
 
 	if n, err := v.dataFile.ReadAt(buf, meta[len(meta)-1].Offset); err != nil || n != int(totalSize) {
 		return nil, fmt.Errorf("read error: %v", err)
