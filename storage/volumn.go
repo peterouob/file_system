@@ -1,14 +1,18 @@
 package storage
 
 import (
-	"encoding/binary"
+	"errors"
 	"os"
 	"sync"
 )
 
+var (
+	ErrWrite = errors.New("write error")
+)
+
 type Volume struct {
 	dataFile    *os.File
-	index       map[string]Needle // from the crypto file name to get
+	index       map[uint64]NeedleMeta // from the crypto file name to get
 	mu          sync.RWMutex
 	writeOffset int64
 }
@@ -18,54 +22,31 @@ type NeedleMeta struct {
 	Size   uint32
 }
 
-const MagicHeader = (0x2DCF25 >> 1)
-const MagicFooter = (0x2DCF25 << 1)
-
-type NeedleHeader struct {
-	MagicHeader  uint32 // 4 byte
-	Cookie       uint64 // 8 byte
-	Key          uint64 // 8 byte
-	AlternateKey uint32 // 4 byte
-	Flag         byte   // 1 byte
-	Size         uint32 // 4 byte
+func NewVolume(dataFile *os.File) *Volume {
+	return &Volume{
+		dataFile:    dataFile,
+		index:       make(map[uint64]NeedleMeta),
+		writeOffset: 0,
+	}
 }
 
-type Needle struct {
-	Header NeedleHeader
-	Data   []byte
-	Footer NeedleFooter
-}
+func (v *Volume) Write(n *Needle) error {
 
-type NeedleFooter struct {
-	Checksum    uint32 // 4
-	MagicFooter uint32 // 4
-}
+	dataBytes := n.Bytes()
+	writeOffset := int64(len(dataBytes))
 
-const NeedleHeaderSize = 29
-const NeedleFooterSize = 8
+	v.mu.Lock()
+	defer v.mu.Unlock()
 
-func (n *Needle) Bytes() []byte {
-	totalSize := NeedleHeaderSize + len(n.Data) + NeedleFooterSize
-	buf := make([]byte, 0, totalSize)
-
-	buf = binary.BigEndian.AppendUint32(buf, n.Header.MagicHeader)
-	buf = binary.BigEndian.AppendUint64(buf, n.Header.Cookie)
-	buf = binary.BigEndian.AppendUint64(buf, n.Header.Key)
-	buf = binary.BigEndian.AppendUint32(buf, n.Header.AlternateKey)
-	buf = append(buf, n.Header.Flag)
-	buf = binary.BigEndian.AppendUint32(buf, n.Header.Size)
-
-	buf = append(buf, n.Data...)
-
-	n.Footer.Checksum = NewCRC(buf).Value()
-	buf = binary.BigEndian.AppendUint32(buf, n.Footer.Checksum)
-	buf = binary.BigEndian.AppendUint32(buf, n.Footer.MagicFooter)
-
-	paddingLen := (8 - (len(buf) % 8)) % 8
-
-	for range paddingLen {
-		buf = append(buf, 0x00)
+	if _, err := v.dataFile.WriteAt(dataBytes, v.writeOffset); err != nil {
+		return ErrWrite
 	}
 
-	return buf
+	v.index[n.Header.Key] = NeedleMeta{
+		Offset: v.writeOffset,
+		Size:   uint32(len(n.Data)),
+	}
+
+	v.writeOffset += writeOffset
+	return nil
 }
