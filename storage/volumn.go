@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -55,4 +57,60 @@ func (v *Volume) Write(n *Needle) error {
 
 	v.writeOffset += writeOffset
 	return nil
+}
+
+var (
+	ErrNotFound    = errors.New("error for file not found")
+	ErrMagicNumber = errors.New("error for file magic number")
+	ErrCookie      = errors.New("error for file cookie")
+	ErrDataDeleted = errors.New("error for file data is deleted")
+	ErrCrcNotValid = errors.New("error for file crc not valid")
+)
+
+func (v *Volume) Read(key KeyPair, cookie uint64) ([]byte, error) {
+	v.mu.RLock()
+	meta, ok := v.index[key]
+	v.mu.RUnlock()
+
+	if !ok {
+		return nil, fmt.Errorf("read not found the data from key:,%w: %v", ErrNotFound, key)
+	}
+
+	var lastMetaSize = meta[len(meta)-1].Size
+
+	totalSize := NeedleHeaderSize + lastMetaSize + NeedleFooterSize
+	buf := make([]byte, totalSize)
+
+	if n, err := v.dataFile.ReadAt(buf, meta[len(meta)-1].Offset); err != nil || n != int(totalSize) {
+		return nil, fmt.Errorf("read error: %v", err)
+	}
+
+	if binary.BigEndian.Uint32(buf[0:4]) != MagicHeader {
+		return nil, ErrMagicNumber
+	}
+
+	if binary.BigEndian.Uint64(buf[4:12]) != cookie {
+		return nil, ErrCookie
+	}
+
+	// delete byte
+	if buf[24] == 1 {
+		return nil, ErrDataDeleted
+	}
+
+	data := buf[:NeedleHeaderSize+lastMetaSize]
+	footer := buf[totalSize-NeedleFooterSize:]
+	storeCrc := binary.BigEndian.Uint32(footer[0:4])
+	dataCrc := NewCRC(data).Value()
+
+	if dataCrc != storeCrc {
+		return nil, ErrCrcNotValid
+	}
+
+	data = buf[NeedleHeaderSize : NeedleHeaderSize+lastMetaSize]
+
+	var result = make([]byte, len(data))
+	copy(result, data)
+
+	return result, nil
 }
