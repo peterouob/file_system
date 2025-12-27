@@ -31,3 +31,7 @@
 | 4 bytes   | 4 bytes     |
 +-----------+-------------+
 ```
+
+# 小寫入batch test
+- Haystack v.s. Disk file
+![](img/sw.png)
