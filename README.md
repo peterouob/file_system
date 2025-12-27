@@ -34,4 +34,10 @@
 
 # 小寫入batch test
 - Haystack v.s. Disk file
+---
+
+## Write
 ![](img/sw.png)
+---
+## Reader
+![](img/sr.png)
