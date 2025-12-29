@@ -26,7 +26,8 @@ type NeedleMeta struct {
 	Size   uint32
 }
 
-const BlockSize = 32 * 1024
+// LimitBlockSize TODO: restrict the block size
+const LimitBlockSize = 32 * 1024 * 1024
 
 func NewVolume(dataFile *os.File) *Volume {
 	return &Volume{
@@ -35,7 +36,7 @@ func NewVolume(dataFile *os.File) *Volume {
 		writeOffset: 0,
 		bufPool: sync.Pool{
 			New: func() any {
-				return make([]byte, 0, BlockSize)
+				return make([]byte, 0, LimitBlockSize)
 			},
 		},
 	}
@@ -88,13 +89,12 @@ func (v *Volume) Read(key KeyPair, cookie uint64) ([]byte, error) {
 
 	totalSize := NeedleHeaderSize + lastMetaSize + NeedleFooterSize
 
-	var buf = make([]byte, totalSize)
+	// restrict the size of the data transfer, so it will not occur
+	// a too large file problem
 
-	if totalSize <= BlockSize {
-		buf = v.bufPool.Get().([]byte)
-		buf = buf[:totalSize]
-		defer v.bufPool.Put(buf)
-	}
+	buf := v.bufPool.Get().([]byte)
+	buf = buf[:totalSize]
+	defer v.bufPool.Put(buf)
 
 	if n, err := v.dataFile.ReadAt(buf, meta[len(meta)-1].Offset); err != nil || n != int(totalSize) {
 		return nil, fmt.Errorf("read error: %v", err)
