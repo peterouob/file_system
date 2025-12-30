@@ -25,9 +25,9 @@ jobs:
           go test -bench=. -run=^$ -benchmem -v ./... > bench_output.txt
           cat bench_output.txt
 
-      - run: mkdir -p "$HOME"/benchmark/artifact
-      - run: touch "$HOME"/benchmark/artifact/result.txt
+      - run: mkdir -p benchmark/artifact
+      - run: touch benchmark/artifact/result.txt
       - uses: actions/upload-artifact@v4
         with:
           name: benchmark-result
-          path: "$HOME"/benchmark/artifact/result.txt
+          path: benchmark/artifact/result.txt
