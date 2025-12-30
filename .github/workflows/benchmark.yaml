@@ -3,8 +3,14 @@ name: Benchmark
 on:
   push:
     branches: [ "main" ]
+    paths-ignore:
+      - 'img/**'
+      - 'README.md'
   pull_request:
-    branches: ["main"]
+    branches: [ "main" ]
+    paths-ignore:
+      - 'img/**'
+      - 'README.md'
   workflow_dispatch:
 
 jobs:
@@ -12,7 +18,7 @@ jobs:
     name: Benchmark
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
           go-version: 'stable'
@@ -27,7 +33,7 @@ jobs:
 
       - run: mkdir -p benchmark/artifact
       - run: touch benchmark/artifact/result.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: benchmark-result
           path: benchmark/artifact/result.txt
