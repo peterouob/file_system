@@ -33,7 +33,7 @@
 ```
 
 # 小寫入batch test
-- Haystack v.s. Disk file
+- Volume(Haystack) v.s. Disk file
 ---
 
 ## `sync.Pool`
@@ -45,3 +45,14 @@
 
 ## 使用自訂義Buffer Pool取代原先單純`sync.Pool`
 ![](img/swp.png)
+
+## 使用 go trace 查看 Event timelines for running goroutines
+
+### Volume
+![](img/volume.png)
+### IO
+![](img/go_test_os.png)
+
+---
+
+![](img/1.png)
