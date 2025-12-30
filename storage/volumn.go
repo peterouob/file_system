@@ -18,7 +18,7 @@ type Volume struct {
 	index       map[KeyPair][]NeedleMeta // from the crypto file name to get
 	mu          sync.RWMutex
 	writeOffset int64
-	bufPool     sync.Pool
+	bufferPool  *BufferPool
 }
 
 type NeedleMeta struct {
@@ -30,16 +30,14 @@ type NeedleMeta struct {
 const LimitBlockSize = 32 * 1024 * 1024
 
 func NewVolume(dataFile *os.File) *Volume {
-	return &Volume{
+	v := &Volume{
 		dataFile:    dataFile,
 		index:       make(map[KeyPair][]NeedleMeta),
 		writeOffset: 0,
-		bufPool: sync.Pool{
-			New: func() any {
-				return make([]byte, 0, LimitBlockSize)
-			},
-		},
+		bufferPool:  NewBufferPool(DefaultSizes...),
 	}
+	v.bufferPool.WarnUp()
+	return v
 }
 
 func (v *Volume) Write(n *Needle) error {
@@ -89,12 +87,14 @@ func (v *Volume) Read(key KeyPair, cookie uint64) ([]byte, error) {
 
 	totalSize := NeedleHeaderSize + lastMetaSize + NeedleFooterSize
 
-	// restrict the size of the data transfer, so it will not occur
-	// a too large file problem
-
-	buf := v.bufPool.Get().([]byte)
+	buf, err := v.bufferPool.Get(totalSize)
 	buf = buf[:totalSize]
-	defer v.bufPool.Put(buf)
+
+	if errors.Is(err, ErrToLarge) {
+		return nil, fmt.Errorf("read error: %v", err)
+	}
+
+	defer v.bufferPool.Put(buf)
 
 	if n, err := v.dataFile.ReadAt(buf, meta[len(meta)-1].Offset); err != nil || n != int(totalSize) {
 		return nil, fmt.Errorf("read error: %v", err)

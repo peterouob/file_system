@@ -36,8 +36,12 @@
 - Haystack v.s. Disk file
 ---
 
-## Write
+## `sync.Pool`
+### Write
 ![](img/sw.png)
 ---
-## Reader
+### Reader
 ![](img/sr.png)
+
+## 使用自訂義Buffer Pool取代原先單純`sync.Pool`
+![](img/swp.png)

@@ -111,10 +111,6 @@ func setupTestVolume(t *testing.T) (*Volume, *os.File) {
 	f, err := os.Create(vPath)
 	require.NoError(t, err)
 
-	t.Cleanup(func() {
-		_ = f.Close()
-	})
-
 	v := NewVolume(f)
 	return v, f
 }
