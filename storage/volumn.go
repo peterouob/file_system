@@ -15,7 +15,7 @@ type KeyPair struct {
 
 type Volume struct {
 	dataFile    *os.File
-	index       map[KeyPair][]NeedleMeta // from the crypto file name to get
+	index       map[KeyPair]NeedleMeta
 	mu          sync.RWMutex
 	writeOffset int64
 	bufferPool  *BufferPool
@@ -26,13 +26,10 @@ type NeedleMeta struct {
 	Size   uint32
 }
 
-// LimitBlockSize TODO: restrict the block size
-const LimitBlockSize = 32 * 1024 * 1024
-
 func NewVolume(dataFile *os.File) *Volume {
 	v := &Volume{
 		dataFile:    dataFile,
-		index:       make(map[KeyPair][]NeedleMeta),
+		index:       make(map[KeyPair]NeedleMeta),
 		writeOffset: 0,
 		bufferPool:  NewBufferPool(DefaultSizes...),
 	}
@@ -57,10 +54,10 @@ func (v *Volume) Write(n *Needle) error {
 		AltKey: n.Header.AlternateKey,
 	}
 
-	v.index[key] = append(v.index[key], NeedleMeta{
+	v.index[key] = NeedleMeta{
 		Offset: v.writeOffset,
 		Size:   n.Header.Size,
-	})
+	}
 
 	v.writeOffset += writeOffset
 	return nil
@@ -83,7 +80,7 @@ func (v *Volume) Read(key KeyPair, cookie uint64) ([]byte, error) {
 		return nil, fmt.Errorf("read not found the data from key:,%w: %v", ErrNotFound, key)
 	}
 
-	var lastMetaSize = meta[len(meta)-1].Size
+	var lastMetaSize = meta.Size
 
 	totalSize := NeedleHeaderSize + lastMetaSize + NeedleFooterSize
 
@@ -96,7 +93,7 @@ func (v *Volume) Read(key KeyPair, cookie uint64) ([]byte, error) {
 
 	defer v.bufferPool.Put(buf)
 
-	if n, err := v.dataFile.ReadAt(buf, meta[len(meta)-1].Offset); err != nil || n != int(totalSize) {
+	if n, err := v.dataFile.ReadAt(buf, meta.Offset); err != nil || n != int(totalSize) {
 		return nil, fmt.Errorf("read error: %v", err)
 	}
 
