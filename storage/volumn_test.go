@@ -1,18 +1,18 @@
 package storage
 
 import (
+	"context"
 	"fmt"
-	"math/rand"
 	rand2 "math/rand/v2"
 	"os"
 	"path/filepath"
+	"runtime/trace"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-var benchPayload = make([]byte, 4096)
 
 func setup(tb testing.TB) *os.File {
 	tb.Helper()
@@ -30,37 +30,6 @@ func teardown(f *os.File, tb testing.TB) {
 	assert.NoError(tb, os.Remove(f.Name()))
 }
 
-func BenchmarkHaystack_Write(b *testing.B) {
-	f := setup(b)
-	defer teardown(f, b)
-	volume := NewVolume(f)
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		n := &Needle{
-			Header: NeedleHeader{
-				Key:  uint64(i),
-				Size: uint32(len(benchPayload)),
-			},
-			Data: benchPayload,
-		}
-		assert.NoError(b, volume.Write(n))
-	}
-	assert.NoError(b, volume.dataFile.Sync())
-}
-
-func BenchmarkOS_Write(b *testing.B) {
-	tmpDir := b.TempDir()
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		fileName := filepath.Join(tmpDir, fmt.Sprintf("%d.dat", i))
-
-		if err := os.WriteFile(fileName, benchPayload, 0644); err != nil {
-			assert.NoError(b, err)
-		}
-	}
-}
 func TestWrite(t *testing.T) {
 	f := setup(t)
 	defer teardown(f, t)
@@ -85,9 +54,8 @@ func TestWrite(t *testing.T) {
 	key := KeyPair{Key: 1, AltKey: 100}
 	metas := volume.index[key]
 
-	assert.Equal(t, 1, len(metas), "Should have 1 needle meta")
-	assert.Equal(t, int64(0), metas[0].Offset, "First offset should be 0")
-	assert.Equal(t, uint32(4096), metas[0].Size, "Size should be data size only")
+	assert.Equal(t, int64(0), metas.Offset, "First offset should be 0")
+	assert.Equal(t, uint32(4096), metas.Size, "Size should be data size only")
 
 	// header + data + footer + padding
 	// (29+ 4096 + 8 + n) % 8 = 0;total = 4136
@@ -97,8 +65,7 @@ func TestWrite(t *testing.T) {
 	assert.NoError(t, volume.Write(needle))
 	metas = volume.index[key]
 
-	assert.Equal(t, 2, len(metas), "Should have 2 needle metas")
-	assert.Equal(t, expectedTotalSize, metas[1].Offset, "Second offset should start after first needle")
+	assert.Equal(t, expectedTotalSize, metas.Offset, "Second offset should start after first needle")
 
 	assert.Equal(t, expectedTotalSize*2, volume.writeOffset, "Final write offset incorrect")
 }
@@ -178,7 +145,7 @@ func TestVolume_Read(t *testing.T) {
 		err := v.Write(needle)
 		require.NoError(t, err)
 
-		meta := v.index[keyPair][0]
+		meta := v.index[keyPair]
 
 		flagOffset := meta.Offset + 24
 
@@ -197,7 +164,7 @@ func TestVolume_Read(t *testing.T) {
 		err := v.Write(needle)
 		require.NoError(t, err)
 
-		meta := v.index[keyPair][0]
+		meta := v.index[keyPair]
 
 		badMagic := []byte{0, 0, 0, 0}
 		_, err = f.WriteAt(badMagic, meta.Offset)
@@ -215,7 +182,7 @@ func TestVolume_Read(t *testing.T) {
 		err := v.Write(needle)
 		require.NoError(t, err)
 
-		meta := v.index[keyPair][0]
+		meta := v.index[keyPair]
 
 		dataStartOffset := meta.Offset + 29
 
@@ -230,102 +197,243 @@ func TestVolume_Read(t *testing.T) {
 }
 
 const (
-	BenchFileCount = 10000
-	BenchFileSize  = 4096
+	BenchPayloadSize = 4096
+	BenchFileCount   = 10000
 )
 
-type benchItem struct {
-	key    KeyPair
-	cookie uint64
-	path   string
+func setupTempVolume(tb testing.TB) (*Volume, string, func()) {
+	tb.Helper()
+	tmpDir := tb.TempDir()
+	vPath := filepath.Join(tmpDir, "bench.vol")
+
+	f, err := os.Create(vPath)
+	require.NoError(tb, err)
+
+	v := NewVolume(f)
+
+	cleanup := func() {
+		_ = f.Close()
+		_ = os.RemoveAll(tmpDir)
+	}
+	return v, vPath, cleanup
 }
 
-func BenchmarkHaystack_Reader(b *testing.B) {
-	b.StopTimer()
-	cha8 := rand2.ChaCha8{}
+func newRandomNeedle(key uint64, size int) *Needle {
+	payload := make([]byte, size)
+	payload[0] = byte(key)
+	payload[size-1] = byte(key >> 8)
 
-	dir := b.TempDir()
-	vPath := filepath.Join(dir, "bench.vol")
-	f, err := os.Create(vPath)
-	require.NoError(b, err)
+	return &Needle{
+		Header: NeedleHeader{
+			Key:         key,
+			Size:        uint32(size),
+			MagicHeader: MagicHeader,
+		},
+		Data: payload,
+		Footer: NeedleFooter{
+			MagicFooter: MagicFooter,
+		},
+	}
+}
 
-	vol := NewVolume(f)
-	b.Cleanup(func() { _ = f.Close() })
+func BenchmarkHaystack_Write(b *testing.B) {
+	ctx, task := trace.NewTask(context.Background(), "TASK_Haystack_Write")
+	defer task.End()
 
-	items := make([]benchItem, BenchFileCount)
-	payload := make([]byte, BenchFileSize)
-	_, err = cha8.Read(payload)
-	assert.NoError(b, err)
+	b.Run("Serial", func(b *testing.B) {
+		region := trace.StartRegion(ctx, "REGION_Serial_Write")
+		defer region.End()
+		v, _, cleanup := setupTempVolume(b)
+		defer cleanup()
+
+		sampleNeedle := newRandomNeedle(1, BenchPayloadSize)
+
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			sampleNeedle.Header.Key = uint64(i)
+			err := v.Write(sampleNeedle)
+			assert.NoError(b, err)
+		}
+	})
+
+	b.Run("Parallel", func(b *testing.B) {
+		region := trace.StartRegion(ctx, "REGION_Serial_Parallel")
+		defer region.End()
+		v, _, cleanup := setupTempVolume(b)
+		defer cleanup()
+
+		b.ResetTimer()
+
+		var i atomic.Uint64
+
+		b.RunParallel(func(pb *testing.PB) {
+			localNeedle := newRandomNeedle(0, BenchPayloadSize)
+
+			for pb.Next() {
+				i.Add(1)
+				localNeedle.Header.Key = i.Load()
+				err := v.Write(localNeedle)
+				assert.NoError(b, err)
+			}
+		})
+	})
+}
+
+func BenchmarkOS_Write(b *testing.B) {
+
+	ctx, task := trace.NewTask(context.Background(), "BenchmarkOS_Write")
+	defer task.End()
+	payload := make([]byte, BenchPayloadSize)
+	payload[0] = 1
+	payload[BenchPayloadSize-1] = 255
+
+	b.Run("Serial", func(b *testing.B) {
+		region := trace.StartRegion(ctx, "BenchmarkOS_Write_Serial")
+		defer region.End()
+		tmpDir := b.TempDir()
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			fileName := filepath.Join(tmpDir, fmt.Sprintf("%d.dat", i))
+			err := os.WriteFile(fileName, payload, 0644)
+			assert.NoError(b, err)
+		}
+	})
+
+	b.Run("Parallel", func(b *testing.B) {
+		region := trace.StartRegion(ctx, "BenchmarkOS_Write_Parallel")
+		defer region.End()
+
+		tmpDir := b.TempDir()
+		var counter atomic.Uint64
+
+		b.ResetTimer()
+
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				id := counter.Add(1)
+				fileName := filepath.Join(tmpDir, fmt.Sprintf("%d.dat", id))
+				err := os.WriteFile(fileName, payload, 0644)
+				assert.NoError(b, err)
+			}
+		})
+	})
+}
+
+func BenchmarkHaystack_Read(b *testing.B) {
+	ctx, task := trace.NewTask(context.Background(), "BenchmarkHaystack_Read")
+	defer task.End()
+	v, _, cleanup := setupTempVolume(b)
+	defer cleanup()
+
+	items := make([]struct {
+		key    uint64
+		cookie uint64
+	}, BenchFileCount)
+
 	for i := 0; i < BenchFileCount; i++ {
 		key := uint64(i)
 		cookie := uint64(i * 10)
+		n := newRandomNeedle(key, BenchPayloadSize)
+		n.Header.Cookie = cookie
 
-		needle := &Needle{
-			Header: NeedleHeader{
-				MagicHeader:  MagicHeader,
-				Cookie:       cookie,
-				Key:          key,
-				AlternateKey: 0,
-				Flag:         0,
-				Size:         uint32(len(payload)),
-			},
-			Data: payload,
-			Footer: NeedleFooter{
-				MagicFooter: MagicFooter,
-			},
-		}
-
-		err := vol.Write(needle)
+		err := v.Write(n)
 		require.NoError(b, err)
 
-		items[i] = benchItem{
-			key:    KeyPair{Key: key, AltKey: 0},
-			cookie: cookie,
+		items[i] = struct{ key, cookie uint64 }{key, cookie}
+	}
+
+	_ = v.dataFile.Sync()
+
+	b.ResetTimer()
+
+	b.Run("Serial", func(b *testing.B) {
+		region := trace.StartRegion(ctx, "BenchmarkHaystack_Read_Serial")
+		defer region.End()
+		rng := rand2.New(rand2.NewPCG(1, 2))
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			idx := rng.IntN(BenchFileCount)
+			target := items[idx]
+			_, err := v.Read(KeyPair{Key: target.key}, target.cookie)
+			assert.NoError(b, err)
 		}
-	}
+	})
 
-	_ = f.Sync()
+	b.Run("Parallel", func(b *testing.B) {
+		region := trace.StartRegion(ctx, "BenchmarkHaystack_Read_Parallel")
+		defer region.End()
+		b.ResetTimer()
+		b.RunParallel(func(pb *testing.PB) {
+			rng := rand2.New(rand2.NewPCG(rand2.Uint64(), rand2.Uint64()))
 
-	b.StartTimer()
+			for pb.Next() {
+				idx := rng.IntN(BenchFileCount)
+				target := items[idx]
+				_, err := v.Read(KeyPair{Key: target.key}, target.cookie)
+				assert.NoError(b, err)
 
-	for i := 0; i < b.N; i++ {
-		idx := rand.Intn(BenchFileCount)
-		target := items[idx]
-
-		_, err := vol.Read(target.key, target.cookie)
-		assert.NoError(b, err)
-	}
+			}
+		})
+	})
 }
 
 func BenchmarkOS_Read(b *testing.B) {
-	b.StopTimer()
-	cha8 := rand2.ChaCha8{}
+	ctx, task := trace.NewTask(context.Background(), "BenchmarkOS_Read")
+	defer task.End()
 
-	dir := b.TempDir()
-	items := make([]benchItem, BenchFileCount)
-	payload := make([]byte, BenchFileSize)
-	_, err := cha8.Read(payload)
-	assert.NoError(b, err)
+	tmpDir := b.TempDir()
+	payload := make([]byte, BenchPayloadSize)
+
+	filePaths := make([]string, BenchFileCount)
 
 	for i := 0; i < BenchFileCount; i++ {
 		fileName := fmt.Sprintf("%d.dat", i)
-		fullPath := filepath.Join(dir, fileName)
+		fullPath := filepath.Join(tmpDir, fileName)
 
 		err := os.WriteFile(fullPath, payload, 0644)
 		require.NoError(b, err)
 
-		items[i] = benchItem{
-			path: fullPath,
+		filePaths[i] = fullPath
+	}
+
+	b.ResetTimer()
+
+	b.Run("Serial", func(b *testing.B) {
+		region := trace.StartRegion(ctx, "BenchmarkOS_Read_Serial")
+		defer region.End()
+		rng := rand2.New(rand2.NewPCG(1, 2))
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			idx := rng.IntN(BenchFileCount)
+			targetPath := filePaths[idx]
+
+			_, err := os.ReadFile(targetPath)
+			if err != nil {
+				b.Fatal(err)
+			}
 		}
-	}
+	})
 
-	b.StartTimer()
+	b.Run("Parallel", func(b *testing.B) {
+		region := trace.StartRegion(ctx, "BenchmarkOS_Read_Parallel")
+		defer region.End()
+		b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
-		idx := rand.Intn(BenchFileCount)
-		target := items[idx]
+		b.RunParallel(func(pb *testing.PB) {
+			rng := rand2.New(rand2.NewPCG(rand2.Uint64(), rand2.Uint64()))
 
-		_, err := os.ReadFile(target.path)
-		assert.NoError(b, err)
-	}
+			for pb.Next() {
+				idx := rng.IntN(BenchFileCount)
+				targetPath := filePaths[idx]
+
+				_, err := os.ReadFile(targetPath)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	})
 }
