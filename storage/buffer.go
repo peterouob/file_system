@@ -21,6 +21,10 @@ type BufferPool struct {
 	size  []uint32
 }
 
+type Buffer struct {
+	B []byte
+}
+
 func NewBufferPool(sizes ...uint32) *BufferPool {
 	pools := make(map[uint32]*sync.Pool)
 
@@ -32,7 +36,9 @@ func NewBufferPool(sizes ...uint32) *BufferPool {
 	for _, size := range sizes {
 		bp.pools[size] = &sync.Pool{
 			New: func() any {
-				return make([]byte, size)
+				b := new(Buffer)
+				b.B = make([]byte, 0, size)
+				return b
 			},
 		}
 	}
@@ -40,9 +46,9 @@ func NewBufferPool(sizes ...uint32) *BufferPool {
 	return bp
 }
 
-var ErrToLarge = errors.New("too large !")
+var ErrToLarge = errors.New("too large")
 
-func (b *BufferPool) Get(size uint32) ([]byte, error) {
+func (b *BufferPool) Get(size uint32) (*Buffer, error) {
 
 	idx := sort.Search(len(b.size), func(i int) bool { return b.size[i] >= size })
 
@@ -51,15 +57,15 @@ func (b *BufferPool) Get(size uint32) ([]byte, error) {
 	}
 
 	targetSize := b.size[idx]
-	buf := b.pools[targetSize].Get().([]byte)
+	buf := b.pools[targetSize].Get().(*Buffer)
+	buf.B = buf.B[:0]
 	return buf, nil
 }
 
-func (b *BufferPool) Put(data []byte) {
-	capacity := uint32(cap(data))
+func (b *BufferPool) Put(buf *Buffer) {
+	capacity := uint32(len(buf.B))
 	if pool, ok := b.pools[capacity]; ok {
-		data = data[:capacity]
-		pool.Put(data)
+		pool.Put(buf)
 	}
 }
 

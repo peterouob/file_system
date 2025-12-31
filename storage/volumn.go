@@ -85,7 +85,7 @@ func (v *Volume) Read(key KeyPair, cookie uint64) ([]byte, error) {
 	totalSize := NeedleHeaderSize + lastMetaSize + NeedleFooterSize
 
 	buf, err := v.bufferPool.Get(totalSize)
-	buf = buf[:totalSize]
+	buf.B = buf.B[:totalSize]
 
 	if errors.Is(err, ErrToLarge) {
 		return nil, fmt.Errorf("read error: %v", err)
@@ -93,25 +93,25 @@ func (v *Volume) Read(key KeyPair, cookie uint64) ([]byte, error) {
 
 	defer v.bufferPool.Put(buf)
 
-	if n, err := v.dataFile.ReadAt(buf, meta.Offset); err != nil || n != int(totalSize) {
+	if n, err := v.dataFile.ReadAt(buf.B, meta.Offset); err != nil || n != int(totalSize) {
 		return nil, fmt.Errorf("read error: %v", err)
 	}
 
-	if binary.BigEndian.Uint32(buf[0:4]) != MagicHeader {
+	if binary.BigEndian.Uint32(buf.B[0:4]) != MagicHeader {
 		return nil, ErrMagicNumber
 	}
 
-	if binary.BigEndian.Uint64(buf[4:12]) != cookie {
+	if binary.BigEndian.Uint64(buf.B[4:12]) != cookie {
 		return nil, ErrCookie
 	}
 
 	// delete byte
-	if buf[24] == 1 {
+	if buf.B[24] == 1 {
 		return nil, ErrDataDeleted
 	}
 
-	data := buf[:NeedleHeaderSize+lastMetaSize]
-	footer := buf[totalSize-NeedleFooterSize:]
+	data := buf.B[:NeedleHeaderSize+lastMetaSize]
+	footer := buf.B[totalSize-NeedleFooterSize:]
 	storeCrc := binary.BigEndian.Uint32(footer[0:4])
 	dataCrc := NewCRC(data).Value()
 
@@ -119,7 +119,7 @@ func (v *Volume) Read(key KeyPair, cookie uint64) ([]byte, error) {
 		return nil, ErrCrcNotValid
 	}
 
-	data = buf[NeedleHeaderSize : NeedleHeaderSize+lastMetaSize]
+	data = buf.B[NeedleHeaderSize : NeedleHeaderSize+lastMetaSize]
 
 	var result = make([]byte, len(data))
 	copy(result, data)

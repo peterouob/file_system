@@ -28,7 +28,7 @@ jobs:
 
       - name: Run Benchmark
         run: |
-          go test -bench=. -run=^$ -benchmem -v ./... > bench_output.txt
+          GOMAXPROCS=4 go test -bench=. -run=^$ -benchmem -benchtime=3s -count=5 -timeout=30m -v ./... > bench_output.txt
           cat bench_output.txt
 
       - run: mkdir -p benchmark/artifact

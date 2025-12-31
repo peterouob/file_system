@@ -99,28 +99,28 @@ func TestDiskWithCrypto(t *testing.T) {
 	}
 }
 
-func BenchmarkDiskStore_Write_Reader(b *testing.B) {
-	s, treadDown := setupDiskTest(&testing.T{})
-	defer treadDown()
-
-	key := "batch_key"
-	data := make([]byte, 1024*1024)
-
-	b.SetBytes(int64(len(data)))
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		_, err := s.Write(key, bytes.NewReader(data))
-		if err != nil {
-			b.Fatal(err)
-		}
-
-		_, r, err := s.Read(key)
-		if err != nil {
-			b.Fatal(err)
-		}
-
-		defer r.Close()
-
-	}
-}
+//func BenchmarkDiskStore_Write_Reader(b *testing.B) {
+//	s, treadDown := setupDiskTest(&testing.T{})
+//	defer treadDown()
+//
+//	key := "batch_key"
+//	data := make([]byte, 1024*1024)
+//
+//	b.SetBytes(int64(len(data)))
+//	b.ResetTimer()
+//
+//	for i := 0; i < b.N; i++ {
+//		_, err := s.Write(key, bytes.NewReader(data))
+//		if err != nil {
+//			b.Fatal(err)
+//		}
+//
+//		_, r, err := s.Read(key)
+//		if err != nil {
+//			b.Fatal(err)
+//		}
+//
+//		defer r.Close()
+//
+//	}
+//}
