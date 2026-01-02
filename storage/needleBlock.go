@@ -2,6 +2,9 @@ package storage
 
 import (
 	"encoding/binary"
+
+	errtype "github.com/peterouob/file_system/type"
+	"github.com/peterouob/file_system/utils"
 )
 
 const MagicHeader = 0x2DCF25 >> 1
@@ -30,28 +33,67 @@ type NeedleFooter struct {
 const NeedleHeaderSize = 29
 const NeedleFooterSize = 8
 
-func (n *Needle) Bytes() []byte {
+func (n *Needle) Bytes(bp *BufferPool) *Buffer {
 	totalSize := NeedleHeaderSize + len(n.Data) + NeedleFooterSize
-	buf := make([]byte, 0, totalSize)
 
-	buf = binary.BigEndian.AppendUint32(buf, n.Header.MagicHeader)
-	buf = binary.BigEndian.AppendUint64(buf, n.Header.Cookie)
-	buf = binary.BigEndian.AppendUint64(buf, n.Header.Key)
-	buf = binary.BigEndian.AppendUint32(buf, n.Header.AlternateKey)
-	buf = append(buf, n.Header.Flag)
-	buf = binary.BigEndian.AppendUint32(buf, n.Header.Size)
+	size := utils.Must(utils.CIU32(totalSize))
 
-	buf = append(buf, n.Data...)
+	buf, _ := bp.Get(size)
 
-	n.Footer.Checksum = NewCRC(buf).Value()
-	buf = binary.BigEndian.AppendUint32(buf, n.Footer.Checksum)
-	buf = binary.BigEndian.AppendUint32(buf, n.Footer.MagicFooter)
+	buf.B = binary.BigEndian.AppendUint32(buf.B, n.Header.MagicHeader)
+	buf.B = binary.BigEndian.AppendUint64(buf.B, n.Header.Cookie)
+	buf.B = binary.BigEndian.AppendUint64(buf.B, n.Header.Key)
+	buf.B = binary.BigEndian.AppendUint32(buf.B, n.Header.AlternateKey)
+	buf.B = append(buf.B, n.Header.Flag)
+	buf.B = binary.BigEndian.AppendUint32(buf.B, n.Header.Size)
 
-	paddingLen := (8 - (len(buf) % 8)) % 8
+	buf.B = append(buf.B, n.Data...)
 
-	for range paddingLen {
-		buf = append(buf, 0x00)
+	n.Footer.Checksum = NewCRC(buf.B).Value()
+	buf.B = binary.BigEndian.AppendUint32(buf.B, n.Footer.Checksum)
+	buf.B = binary.BigEndian.AppendUint32(buf.B, n.Footer.MagicFooter)
+
+	paddingLen := (8 - (len(buf.B) % 8)) % 8
+
+	if paddingLen > 0 {
+		for range paddingLen {
+			buf.B = append(buf.B, 0)
+		}
 	}
 
 	return buf
+}
+
+func ValidNeedleBlock(buf []byte, cookie uint64) error {
+	if len(buf) < 25 {
+		return errtype.ErrBufferTooSmall
+	}
+
+	if binary.BigEndian.Uint32(buf[:4]) != MagicHeader {
+		return errtype.ErrMagicNumber
+	}
+
+	if binary.BigEndian.Uint64(buf[4:12]) != cookie {
+		return errtype.ErrCookie
+	}
+
+	if buf[24] == 1 {
+		return errtype.ErrDataDeleted
+	}
+
+	return nil
+}
+
+func GetNeedleBlockInfo(totalSize, metaSize uint32, buf []byte) ([]byte, error) {
+	dataWithHeader := buf[:NeedleHeaderSize+metaSize]
+	footer := buf[totalSize-NeedleFooterSize:]
+	crc := binary.BigEndian.Uint32(footer[0:4])
+
+	if NewCRC(dataWithHeader).Value() != crc {
+		return nil, errtype.ErrCrcNotValid
+	}
+
+	data := dataWithHeader[NeedleHeaderSize : NeedleHeaderSize+metaSize]
+
+	return data, nil
 }

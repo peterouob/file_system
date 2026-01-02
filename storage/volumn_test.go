@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	errtype "github.com/peterouob/file_system/type"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -123,7 +124,7 @@ func TestVolume_Read(t *testing.T) {
 		_, err := v.Read(wrongKey, cookieVal)
 
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, ErrNotFound)
+		assert.ErrorIs(t, err, errtype.ErrNotFound)
 	})
 
 	t.Run("Error_InvalidCookie", func(t *testing.T) {
@@ -136,7 +137,7 @@ func TestVolume_Read(t *testing.T) {
 		_, err = v.Read(keyPair, wrongCookie)
 
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, ErrCookie)
+		assert.ErrorIs(t, err, errtype.ErrCookie)
 	})
 
 	t.Run("Error_DataDeleted", func(t *testing.T) {
@@ -155,7 +156,7 @@ func TestVolume_Read(t *testing.T) {
 		_, err = v.Read(keyPair, cookieVal)
 
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, ErrDataDeleted)
+		assert.ErrorIs(t, err, errtype.ErrDataDeleted)
 	})
 
 	t.Run("Error_MagicHeaderMismatch", func(t *testing.T) {
@@ -173,7 +174,7 @@ func TestVolume_Read(t *testing.T) {
 		_, err = v.Read(keyPair, cookieVal)
 
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, ErrMagicNumber)
+		assert.ErrorIs(t, err, errtype.ErrMagicNumber)
 	})
 
 	t.Run("Error_CRC_Mismatch", func(t *testing.T) {
@@ -192,7 +193,7 @@ func TestVolume_Read(t *testing.T) {
 		_, err = v.Read(keyPair, cookieVal)
 
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, ErrCrcNotValid)
+		assert.ErrorIs(t, err, errtype.ErrCrcNotValid)
 	})
 }
 

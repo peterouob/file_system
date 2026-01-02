@@ -30,7 +30,8 @@ func setUp(payload []byte) *Needle {
 func TestNeedle_Bytes(t *testing.T) {
 	dataPayload := []byte("12345")
 	needle := setUp(dataPayload)
-	getBytes := needle.Bytes()
+	pool := NewBufferPool()
+	getBytes := needle.Bytes(pool).B
 	assert.Equal(t, len(getBytes)%8, 0) // check align 8 byte
 
 	// before the padding size is 29+5+8 = 42

@@ -1,19 +1,24 @@
 package storage
 
 import (
-	"errors"
 	"sort"
 	"sync"
+
+	errtype "github.com/peterouob/file_system/type"
+	"github.com/peterouob/file_system/utils"
 )
 
 const (
+	xsmallSize = 64
 	smallSize  = 1024             // 1KB
 	mediumSize = 32 * 1024        // 5KB
 	largeSize  = 1024 * 1024      // 1MB
 	xlargeSize = 20 * 1024 * 1024 // 20MB
 )
 
-var DefaultSizes = []uint32{smallSize, mediumSize, largeSize, xlargeSize}
+var (
+	DefaultSizes = []uint32{xsmallSize, smallSize, mediumSize, largeSize, xlargeSize}
+)
 
 // BufferPool TODO:use prometheus to metrics the pool state
 type BufferPool struct {
@@ -26,6 +31,11 @@ type Buffer struct {
 }
 
 func NewBufferPool(sizes ...uint32) *BufferPool {
+
+	if len(sizes) == 0 {
+		sizes = DefaultSizes
+	}
+
 	pools := make(map[uint32]*sync.Pool)
 
 	bp := &BufferPool{
@@ -46,14 +56,12 @@ func NewBufferPool(sizes ...uint32) *BufferPool {
 	return bp
 }
 
-var ErrToLarge = errors.New("too large")
-
 func (b *BufferPool) Get(size uint32) (*Buffer, error) {
 
 	idx := sort.Search(len(b.size), func(i int) bool { return b.size[i] >= size })
 
 	if idx >= len(b.size) {
-		return nil, ErrToLarge
+		return nil, errtype.ErrToLarge
 	}
 
 	targetSize := b.size[idx]
@@ -63,7 +71,7 @@ func (b *BufferPool) Get(size uint32) (*Buffer, error) {
 }
 
 func (b *BufferPool) Put(buf *Buffer) {
-	capacity := uint32(len(buf.B))
+	capacity := utils.Must(utils.CIU32(cap(buf.B)))
 	if pool, ok := b.pools[capacity]; ok {
 		pool.Put(buf)
 	}
