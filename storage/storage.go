@@ -64,14 +64,22 @@ func (s *DiskStore) openWriteFile(key string) (*os.File, error) {
 	}
 
 	fullPathWithRoot := fmt.Sprintf("%s/%s", s.Root, path.GetFullPath())
-	return os.Create(fullPathWithRoot)
+	f, err := os.Create(fullPathWithRoot)
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
 }
 
 func (s *DiskStore) openReadFile(key string) (*os.File, error) {
 	path := s.PathTransformFunc(key)
 	fullPathWithRoot := fmt.Sprintf("%s/%s", s.Root, path.GetFullPath())
 
-	return os.Open(fullPathWithRoot)
+	f, err := os.Open(fullPathWithRoot)
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
 }
 
 func (s *DiskStore) Write(key string, r io.Reader) (int64, error) {
@@ -97,7 +105,9 @@ func (s *DiskStore) WriteEncrypt(encKey []byte, key string, r io.Reader) (int64,
 		return 0, err
 	}
 
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 
 	n, err := crypto.CopyEnCrypto(encKey, r, f)
 	if err != nil {
@@ -129,8 +139,10 @@ func (s *DiskStore) ReadDecrypt(encKey []byte, key string, d io.Writer) (int64, 
 	if err != nil {
 		return 0, err
 	}
-	defer f.Close()
 
+	defer func() {
+		_ = f.Close()
+	}()
 	n, err := crypto.CopyDeCrypto(encKey, f, d)
 	if err != nil {
 		return 0, err

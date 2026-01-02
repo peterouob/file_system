@@ -53,7 +53,9 @@ func TestDiskStorage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	defer r.Close()
+	defer func() {
+		_ = r.Close()
+	}()
 
 	b, err := io.ReadAll(r)
 	if err != nil {
@@ -82,7 +84,10 @@ func TestDiskWithCrypto(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
+
+	defer func() {
+		_ = r.Close()
+	}()
 
 	if rn == int64(len(data)) {
 		t.Errorf("expect Read %d, but got %d", len(data), rn+1)
