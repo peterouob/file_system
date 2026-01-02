@@ -40,12 +40,11 @@
 ---
 
 ## Go Trace Analysis
-> Event timelines for running goroutines
 
-### 1. Volume Analysis
+### 1. Haystack Analysis
 ![](img/volume.png)
 
-### 2. IO Analysis
+### 2. Standard Analysis
 ![](img/go_test_os.png)
 
 ### 3. Overall Timeline
