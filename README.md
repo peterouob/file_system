@@ -1,58 +1,52 @@
-# Block Serialization Byte
+# Benchmark Results
 
-## Overall Structure
-```text
-+--------------------+-------------------+------------------+----------+
-|   Needle Header    |       Data        |  Needle Footer   | Padding  |
-|      29 bytes      |    N bytes        |     8 bytes     | 0–7 byte |
-+--------------------+-------------------+------------------+----------+
-```
+### Legend & Metrics Definitions
 
-### Needle Header
-```text
-+---------------+----------+----------+--------------+------+--------+
-| MagicHeader   | Cookie   | Key      | AlternateKey | Flag | Size   |
-| 4 bytes       | 8 bytes  | 8 bytes  | 4 bytes      | 1    | 4 bytes|
-+---------------+----------+----------+--------------+------+--------+
-```
+* **`Benchmark` / `Operation` / `Type`**
+    * **Haystack**: The optimized storage engine implemented in this project (reference from facebook haystack structure).
+    * **Standard**: The standard OS file I/O operations.
+    * **Serial**: Single-threaded execution.
+    * **Parallel**: Concurrent execution with 8 cores.
+    * **cpu:**: Apple M1 Pro
 
-### Data
-```text
-+--------------------+
-|      Data          |
-|   Size bytes       |
-+--------------------+
-```
+* **`Iterations (Avg)`**
+    * The average total number of operations executed within the benchmark time (default 1s).
+    * *Higher values indicate better throughput.*
 
-### Needle Footer
-```text
-+-----------+-------------+
-| Checksum  | MagicFooter |
-| 4 bytes   | 4 bytes     |
-+-----------+-------------+
-```
+* **`Time op (ns)`**
+    * The average time consumed per single operation in nanoseconds.
+    * *Lower values indicate lower latency and faster speed.*
 
-# 小寫入batch test
-- Volume(Haystack) v.s. Disk file
+* **`MEM for op1 / op2 / op3`**
+    * The heap memory allocated (Bytes per Operation) for three consecutive test runs.
+    * *Low value is better (0 indicates zero-allocation).*
+
 ---
 
-## `sync.Pool`
-### Write
-![](img/sw.png)
+### Performance Comparison
+
+| Benchmark | Operation | Type | Iterations (Avg) | Time op (ns) | MEM for op1 | MEM for op2 | MEM for op3 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Haystack** | **READ** | Serial | 4,144,100 | **1,422** | **0** | **0** | **0** |
+| **Haystack** | **READ** | Parallel | 5,166,798 | **1,163** | **0** | **0** | **0** |
+| Standard | READ | Serial | 313,744 | 18,207 | 5272 | 5272 | 5272 |
+| Standard | READ | Parallel | 594,915 | 10,001 | 5272 | 5272 | 5272 |
+| | | | | | | | |
+| **Haystack** | **WRITE** | Serial | 1,526,632 | **3,795** | **113** | **110** | **106** |
+| **Haystack** | **WRITE** | Parallel | 1,140,886 | **5,062** | **134** | **133** | **130** |
+| Standard | WRITE | Serial | 72,379 | 93,244 | 332 | 332 | 332 |
+| Standard | WRITE | Parallel | 75,790 | 86,991 | 350 | 350 | 350 |
+
 ---
-### Reader
-![](img/sr.png)
 
-## 使用自訂義Buffer Pool取代原先單純`sync.Pool`
-![](img/swp.png)
+## Go Trace Analysis
+> Event timelines for running goroutines
 
-## 使用 go trace 查看 Event timelines for running goroutines
-
-### Volume
+### 1. Volume Analysis
 ![](img/volume.png)
-### IO
+
+### 2. IO Analysis
 ![](img/go_test_os.png)
 
----
-
+### 3. Overall Timeline
 ![](img/1.png)
