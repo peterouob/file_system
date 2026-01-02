@@ -1,0 +1,6 @@
+align-show:
+	fieldalignment ./... # it wil clear all comment, so reference where need to fix and fix it by self
+align-fix:
+	fieldalignment -fix ./...
+gosec:
+	gosec -fmt=html -out=results.html ./...
