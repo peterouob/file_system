@@ -8,17 +8,17 @@ const MagicHeader = 0x2DCF25 >> 1
 const MagicFooter = 0x2DCF25 << 1
 
 type NeedleHeader struct {
-	MagicHeader  uint32 // 4 byte
-	Cookie       uint64 // 8 byte
-	Key          uint64 // 8 byte
-	AlternateKey uint32 // 4 byte
-	Flag         byte   // 1 byte
-	Size         uint32 // 4 byte
+	Cookie       uint64
+	Key          uint64
+	MagicHeader  uint32
+	AlternateKey uint32
+	Size         uint32
+	Flag         byte
 }
 
 type Needle struct {
-	Header NeedleHeader
 	Data   []byte
+	Header NeedleHeader
 	Footer NeedleFooter
 }
 

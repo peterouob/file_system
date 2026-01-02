@@ -16,9 +16,9 @@ type KeyPair struct {
 type Volume struct {
 	dataFile    *os.File
 	index       map[KeyPair]NeedleMeta
-	mu          sync.RWMutex
-	writeOffset int64
 	bufferPool  *BufferPool
+	writeOffset int64
+	mu          sync.RWMutex
 }
 
 type NeedleMeta struct {

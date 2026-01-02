@@ -1,8 +1,8 @@
 package storage
 
 type Opts struct {
-	Root              string
 	PathTransformFunc PathTransformFunc
+	Root              string
 }
 
 type Option func(opts *Opts)
