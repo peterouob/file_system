@@ -10,6 +10,13 @@ import (
 const MagicHeader = 0x2DCF25 >> 1
 const MagicFooter = 0x2DCF25 << 1
 
+/*
+NeedleHeader
++---------------+----------+----------+--------------+------+--------+
+| MagicHeader   | Cookie   | Key      | AlternateKey | Flag | Size   |
+| 4 bytes       | 8 bytes  | 8 bytes  | 4 bytes      | 1    | 4 bytes|
++---------------+----------+----------+--------------+------+--------+
+*/
 type NeedleHeader struct {
 	Cookie       uint64
 	Key          uint64
@@ -25,6 +32,14 @@ type Needle struct {
 	Footer NeedleFooter
 }
 
+/*
+	NeedleFooter
+
++-----------+-------------+
+| Checksum  | MagicFooter |
+| 4 bytes   | 4 bytes     |
++-----------+-------------+
+*/
 type NeedleFooter struct {
 	Checksum    uint32 // 4
 	MagicFooter uint32 // 4
