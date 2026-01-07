@@ -7,7 +7,7 @@
     * **Standard**: The standard OS file I/O operations.
     * **Serial**: Single-threaded execution.
     * **Parallel**: Concurrent execution with 8 cores.
-    * **cpu:**: Apple M1 Pro
+    * **cpu**: Apple M1 Pro
 
 * **`Iterations (Avg)`**
     * The average total number of operations executed within the benchmark time (default 1s).
