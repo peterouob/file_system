@@ -116,3 +116,55 @@ func (v *Volume) Read(key KeyPair, cookie uint64) ([]byte, error) {
 
 	return data, nil
 }
+
+func (v *Volume) Reload() {
+	//TODO when the system start reload(recover) the data from disk
+	panic("implement me")
+}
+
+// Delete TODO:i think it can us a queue to record the first delNeedle write time and use a matrics when system isn't busy then delete the delNeedle block on disk
+// i think maybe use segment tree is a good idea to find and delete the time range on disk
+func (v *Volume) Delete(key KeyPair, cookie uint64) error {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	if _, ok := v.index[key]; ok {
+		log.Println("Deleted ...")
+		return nil
+	}
+
+	delNeedle := Needle{
+		Data: nil,
+		Header: NeedleHeader{
+			Cookie:       cookie,
+			Key:          key.Key,
+			AlternateKey: key.AltKey,
+			MagicHeader:  MagicHeader,
+			Size:         0,
+			Flag:         DeleteFlag,
+		},
+		Footer: NeedleFooter{
+			Checksum:    0,
+			MagicFooter: MagicFooter,
+		},
+	}
+
+	buf := delNeedle.Bytes(v.bufferPool)
+	defer v.bufferPool.Put(buf)
+
+	n, err := v.dataFile.WriteAt(buf.B, v.writeOffset)
+
+	if err != nil {
+		return fmt.Errorf("write error: %v", err)
+	}
+
+	if n != len(buf.B) {
+		return fmt.Errorf("write error: %v", io.ErrShortWrite)
+	}
+
+	v.writeOffset += int64(n)
+
+	delete(v.index, key)
+
+	return nil
+}
