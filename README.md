@@ -7,7 +7,7 @@
     * **Standard**: The standard OS file I/O operations.
     * **Serial**: Single-threaded execution.
     * **Parallel**: Concurrent execution with 8 cores.
-    * **cpu:**: Apple M1 Pro
+    * **cpu**: Apple M1 Pro
 
 * **`Iterations (Avg)`**
     * The average total number of operations executed within the benchmark time (default 1s).
@@ -40,12 +40,11 @@
 ---
 
 ## Go Trace Analysis
-> Event timelines for running goroutines
 
-### 1. Volume Analysis
+### 1. Haystack Analysis
 ![](img/volume.png)
 
-### 2. IO Analysis
+### 2. Standard Analysis
 ![](img/go_test_os.png)
 
 ### 3. Overall Timeline
