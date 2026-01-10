@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+option go_package = ".";
+
+message fileType {
+  string fileName = 1;
+  string filePath = 2;
+};
+
+message TransportReq {
+  string fromName = 1;
+  fileType file = 2;
+  string toName = 3;
+};
+
+message TransportResp {
+  string fromName = 1;
+  fileType file = 2;
+};
+
+service FileTransport {
+  rpc TransPort(TransportReq) returns (TransportResp);
+}

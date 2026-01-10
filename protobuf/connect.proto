@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+option go_package = ".";
+
+message GetTokenReq {
+  string name = 1;
+  string password = 2;
+};
+
+message GetTokenResp {
+  string token = 1;
+}
+
+message ConnectServiceReq {
+    string addr = 1;
+    string token = 2;
+};
+
+message ConnectServiceResp {};
+
+service HandleConnect{
+  rpc GetToken(GetTokenReq) returns (GetTokenResp);
+  rpc ConnectService(ConnectServiceReq) returns (ConnectServiceResp);
+}
